@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: 2026 Rahul Kumar <rahulk.3477@gmail.com>
+# SPDX-License-Identifier: MIT
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sbom-converter-rahul"
+version = "0.1.0"
+description = "CLI/Docker SBOM converter for SPDX 2.3, SPDX 3.x, and CycloneDX 1.7"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{name="Rahul Kumar", email="rahulk.3477@gmail.com"}]
+keywords = ["SBOM", "SPDX", "CycloneDX"]
+dependencies = []
+
+[project.scripts]
+sbom-convert = "sbom_converter.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
