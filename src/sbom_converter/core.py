@@ -245,60 +245,6 @@ def validate_spdx3_output(doc, target_fmt):
             raise ValidationError(f"@graph[{i}] missing required 'spdxId' or '@id' field")
 
 
-def spdx2_to_cdx(doc, report):
-    out = {
-        "bomFormat": "CycloneDX",
-        "specVersion": "1.7",
-        "serialNumber": f"urn:uuid:{uuid.uuid4()}",
-        "version": 1,
-        "metadata": {
-            "timestamp": now(),
-            "authors": [{"name": AUTHOR, "email": EMAIL}],
-            "tools": {"components": [{"type": "application", "name": TOOL, "version": VERSION, "author": AUTHOR}]},
-        },
-        "components": [],
-    }
-    ids = {}
-    for i, p in enumerate(doc.get("packages", [])):
-        ref = p.get("SPDXID") or f"pkg-{i}"
-        ids[ref] = ref
-        c = {"type": "library", "bom-ref": ref, "name": p.get("name", "unnamed")}
-        if p.get("versionInfo"):
-            c["version"] = p["versionInfo"]
-        if p.get("supplier"):
-            c["supplier"] = {"name": p["supplier"].split(":", 1)[-1].strip()}
-        hs = []
-        amap = {"SHA1": "SHA-1", "SHA256": "SHA-256", "SHA384": "SHA-384", "SHA512": "SHA-512", "MD5": "MD5"}
-        for h in p.get("checksums", []):
-            if h.get("algorithm") in amap and h.get("checksumValue"):
-                hs.append({"alg": amap[h["algorithm"]], "content": h["checksumValue"]})
-        if hs:
-            c["hashes"] = hs
-        lic = p.get("licenseConcluded") or p.get("licenseDeclared")
-        if lic and lic not in ("NOASSERTION", "NONE"):
-            c["licenses"] = [{"expression": lic}]
-        if p.get("copyrightText") not in (None, "NOASSERTION", "NONE"):
-            c["copyright"] = [{"text": p["copyrightText"]}]
-        for er in p.get("externalRefs", []):
-            if er.get("referenceType") == "purl":
-                c["purl"] = er.get("referenceLocator")
-                break
-        out["components"].append(c)
-    deps = {}
-    for r in doc.get("relationships", []):
-        a, b, t = r.get("spdxElementId"), r.get("relatedSpdxElement"), r.get("relationshipType", "")
-        if a in ids and b in ids and t in ("DEPENDS_ON", "DYNAMIC_LINK", "STATIC_LINK"):
-            deps.setdefault(a, set()).add(b)
-        elif t not in ("DESCRIBES", "CONTAINS"):
-            report.warn("RELATIONSHIP_NOT_MAPPED", f"SPDX relationship {t} not represented in CycloneDX dependency graph.")
-    if deps:
-        out["dependencies"] = [{"ref": k, "dependsOn": sorted(v)} for k, v in sorted(deps.items())]
-    if doc.get("files"):
-        report.warn("FILES_NOT_MAPPED", "SPDX file-level objects are not emitted as CycloneDX components.")
-    report.stats = {"components": len(out["components"]), "relationships": len(doc.get("relationships", []))}
-    return out
-
-
 def cdx_to_cdx17(doc, report):
     out = copy.deepcopy(doc)
     old = str(out.get("specVersion", ""))
@@ -404,53 +350,18 @@ def spdx2_to_spdx3(doc, report, target="3.0.1"):
     return {"@context": context, "@graph": graph}
 
 
-def cdx_to_spdx3(doc, report, target="3.0.1"):
-    tmp = {
-        "spdxVersion": "SPDX-2.3",
-        "SPDXID": "SPDXRef-DOCUMENT",
-        "name": "CycloneDX import",
-        "dataLicense": "CC0-1.0",
-        "documentNamespace": doc.get("serialNumber", f"urn:uuid:{uuid.uuid4()}"),
-        "creationInfo": {"created": doc.get("metadata", {}).get("timestamp", now()), "creators": ["Tool: sbom-convert"]},
-        "packages": [],
-        "relationships": [],
-    }
-    for i, c in enumerate(doc.get("components", [])):
-        ref = c.get("bom-ref") or f"SPDXRef-{safe(c.get('name', 'component'))}-{i}"
-        p = {"SPDXID": ref, "name": c.get("name", "unnamed")}
-        if c.get("version"):
-            p["versionInfo"] = c["version"]
-        if c.get("purl"):
-            p["externalRefs"] = [{"referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": c["purl"]}]
-        if c.get("licenses"):
-            lic_info = c["licenses"][0]
-            p["licenseConcluded"] = lic_info.get("expression") or lic_info.get("license", {}).get("id") or "NOASSERTION"
-        tmp["packages"].append(p)
-    for d in doc.get("dependencies", []):
-        for b in d.get("dependsOn", []):
-            tmp["relationships"].append({"spdxElementId": d.get("ref"), "relationshipType": "DEPENDS_ON", "relatedSpdxElement": b})
-    return spdx2_to_spdx3(tmp, report, target)
-
-
 def convert(doc, target, strict=False):
     src = detect(doc)
     basic_validate(doc, src)
     report = Report(src, target)
     if target == "cdx-1.7":
-        if src.startswith("cyclonedx-"):
-            out = cdx_to_cdx17(doc, report)
-        elif src == "spdx-2.3":
-            out = spdx2_to_cdx(doc, report)
-        else:
-            raise ConversionError(f"{src} -> {target} is not implemented.")
+        if not src.startswith("cyclonedx-"):
+            raise ConversionError(f"{src} -> {target} is not supported: only CycloneDX -> CycloneDX conversion is supported, not cross-format.")
+        out = cdx_to_cdx17(doc, report)
     elif target in ("spdx-3.0.1", "spdx-3.1"):
-        ver = target.split("-", 1)[1]
-        if src == "spdx-2.3":
-            out = spdx2_to_spdx3(doc, report, ver)
-        elif src.startswith("cyclonedx-"):
-            out = cdx_to_spdx3(doc, report, ver)
-        else:
-            raise ConversionError(f"{src} -> {target} is not implemented.")
+        if src != "spdx-2.3":
+            raise ConversionError(f"{src} -> {target} is not supported: only SPDX -> SPDX conversion is supported, not cross-format.")
+        out = spdx2_to_spdx3(doc, report, target.split("-", 1)[1])
     else:
         raise ConversionError(f"Unsupported target: {target}")
     validate_output(out, target)

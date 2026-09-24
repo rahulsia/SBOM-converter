@@ -50,19 +50,14 @@ def test_detect_rejects_unknown_format():
         detect({"foo": "bar"})
 
 
-def test_spdx_to_cdx17():
-    out, report = convert(spdx(), "cdx-1.7")
-    assert out["specVersion"] == "1.7"
-    assert report.stats["components"] == 1
-
-
-def test_cdx_to_spdx301():
-    out, _ = convert(cdx(), "spdx-3.0.1")
+def test_spdx2_to_spdx301():
+    out, report = convert(spdx(), "spdx-3.0.1")
     assert out["@context"].endswith("spdx-context.jsonld")
+    assert report.stats["packages"] == 1
 
 
-def test_cdx_to_spdx31_warns_experimental():
-    _, report = convert(cdx(), "spdx-3.1")
+def test_spdx2_to_spdx31_warns_experimental():
+    _, report = convert(spdx(), "spdx-3.1")
     assert any(w.code == "EXPERIMENTAL_TARGET" for w in report.warnings)
 
 
@@ -70,6 +65,18 @@ def test_cdx_to_cdx17_roundtrip():
     out, report = convert(cdx(), "cdx-1.7")
     assert out["specVersion"] == "1.7"
     assert any(w.code == "UPCONVERT" for w in report.warnings)
+
+
+def test_spdx_to_cdx_cross_format_rejected():
+    with pytest.raises(ConversionError, match="cross-format"):
+        convert(spdx(), "cdx-1.7")
+
+
+def test_cdx_to_spdx3_cross_format_rejected():
+    with pytest.raises(ConversionError, match="cross-format"):
+        convert(cdx(), "spdx-3.0.1")
+    with pytest.raises(ConversionError, match="cross-format"):
+        convert(cdx(), "spdx-3.1")
 
 
 def test_basic_validate_spdx_missing_field():
@@ -112,7 +119,7 @@ def test_convert_unimplemented_path():
 
 def test_strict_mode_rejects_warnings():
     with pytest.raises(ConversionError):
-        convert(cdx(), "spdx-3.1", strict=True)
+        convert(spdx(), "spdx-3.1", strict=True)
 
 
 def test_cli_info(capsys):
@@ -144,7 +151,7 @@ def test_cli_convert_writes_output(tmp_path):
 
     in_path = tmp_path / "in.json"
     out_path = tmp_path / "out.json"
-    in_path.write_text(json.dumps(spdx()))
+    in_path.write_text(json.dumps(cdx()))
     assert main([str(in_path), "--to", "cdx-1.7", "-o", str(out_path)]) == 0
     out = json.loads(out_path.read_text())
     assert out["specVersion"] == "1.7"
@@ -178,66 +185,66 @@ def test_cli_unsupported_input_returns_error_code(tmp_path, capsys):
 
 
 def test_validate_output_cdx17_valid():
-    out, _ = convert(spdx(), "cdx-1.7")
+    out, _ = convert(cdx(), "cdx-1.7")
     assert validate_output(out, "cdx-1.7") is True
 
 
 def test_validate_output_cdx17_missing_serialnumber():
-    out, _ = convert(spdx(), "cdx-1.7")
+    out, _ = convert(cdx(), "cdx-1.7")
     del out["serialNumber"]
     with pytest.raises(ValidationError, match="serialNumber"):
         validate_output(out, "cdx-1.7")
 
 
 def test_validate_output_cdx17_invalid_specversion():
-    out, _ = convert(spdx(), "cdx-1.7")
+    out, _ = convert(cdx(), "cdx-1.7")
     out["specVersion"] = "1.6"
     with pytest.raises(ValidationError, match="1.7"):
         validate_output(out, "cdx-1.7")
 
 
 def test_validate_output_cdx17_components_not_list():
-    out, _ = convert(spdx(), "cdx-1.7")
+    out, _ = convert(cdx(), "cdx-1.7")
     out["components"] = "not-a-list"
     with pytest.raises(ValidationError, match="components.*list"):
         validate_output(out, "cdx-1.7")
 
 
 def test_validate_output_cdx17_component_missing_name():
-    out, _ = convert(spdx(), "cdx-1.7")
+    out, _ = convert(cdx(), "cdx-1.7")
     del out["components"][0]["name"]
     with pytest.raises(ValidationError, match="name"):
         validate_output(out, "cdx-1.7")
 
 
 def test_validate_output_spdx301_valid():
-    out, _ = convert(cdx(), "spdx-3.0.1")
+    out, _ = convert(spdx(), "spdx-3.0.1")
     assert validate_output(out, "spdx-3.0.1") is True
 
 
 def test_validate_output_spdx301_missing_context():
-    out, _ = convert(cdx(), "spdx-3.0.1")
+    out, _ = convert(spdx(), "spdx-3.0.1")
     del out["@context"]
     with pytest.raises(ValidationError, match="@context"):
         validate_output(out, "spdx-3.0.1")
 
 
 def test_validate_output_spdx301_graph_not_list():
-    out, _ = convert(cdx(), "spdx-3.0.1")
+    out, _ = convert(spdx(), "spdx-3.0.1")
     out["@graph"] = "not-a-list"
     with pytest.raises(ValidationError, match="@graph"):
         validate_output(out, "spdx-3.0.1")
 
 
 def test_validate_output_spdx301_empty_graph():
-    out, _ = convert(cdx(), "spdx-3.0.1")
+    out, _ = convert(spdx(), "spdx-3.0.1")
     out["@graph"] = []
     with pytest.raises(ValidationError, match="not be empty"):
         validate_output(out, "spdx-3.0.1")
 
 
 def test_validate_output_spdx301_graph_item_missing_type():
-    out, _ = convert(cdx(), "spdx-3.0.1")
+    out, _ = convert(spdx(), "spdx-3.0.1")
     del out["@graph"][0]["type"]
     with pytest.raises(ValidationError, match="type"):
         validate_output(out, "spdx-3.0.1")

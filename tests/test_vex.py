@@ -201,7 +201,7 @@ def test_cli_vex_combined_with_conversion(tmp_path):
         [
             str(sbom),
             "--to",
-            "spdx-3.0.1",
+            "cdx-1.7",
             "-o",
             str(converted_out),
             "--vex",

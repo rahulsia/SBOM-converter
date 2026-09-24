@@ -4,16 +4,18 @@ Copyright (c) 2026 Rahul Kumar
 Author: Rahul Kumar — rahulk.3477@gmail.com
 License: MIT (`SPDX-License-Identifier: MIT`)
 
-A small, dependency-free CLI (and Docker image) that converts JSON Software
-Bill of Materials documents between formats:
+A small, dependency-free CLI (and Docker image) that upgrades JSON Software
+Bill of Materials documents to a newer version of the *same* SBOM standard:
 
-- **SPDX 2.3 JSON**
-- **SPDX 3.x JSON-LD** (3.0.1, and experimental 3.1)
-- **CycloneDX JSON** (any spec version as input; 1.7 as output)
+- **SPDX 2.3 JSON → SPDX 3.x JSON-LD** (3.0.1, and experimental 3.1)
+- **CycloneDX JSON (any spec version) → CycloneDX 1.7**
 
 It auto-detects the input format, converts it, and produces a machine-readable
-warnings report describing anything that couldn't be losslessly mapped (e.g.
-an SPDX relationship type with no CycloneDX equivalent).
+warnings report describing anything that couldn't be losslessly mapped. It
+does **not** convert between SPDX and CycloneDX — the two standards model
+software composition differently enough that a cross-format conversion tends
+to silently misrepresent data rather than losslessly translate it, so this
+tool intentionally stays within one standard per conversion.
 
 It can also generate [OpenVEX](https://openvex.dev) vulnerability
 exploitability statements referencing the SBOM's components, by default
@@ -24,17 +26,21 @@ the vulnerability data yourself.
 ## What it does
 
 `sbom-convert` reads a single JSON SBOM file, detects whether it's SPDX 2.3,
-SPDX 3.x JSON-LD, or CycloneDX, and converts it to one of the supported
-targets below. Conversion is intentionally pragmatic rather than a full
-implementation of either spec: fields that map cleanly are carried over,
-fields that don't are dropped with a warning rather than silently lost.
+SPDX 3.x JSON-LD, or CycloneDX, and upgrades it to a newer version within
+that same standard. Conversion is intentionally pragmatic rather than a full
+implementation of the spec: fields that map cleanly are carried over, fields
+that don't are dropped with a warning rather than silently lost.
 
 ### Supported conversion paths
 
 | From ↓ / To → | `cdx-1.7` | `spdx-3.0.1` | `spdx-3.1` |
 |---|---|---|---|
-| SPDX 2.3 JSON | ✅ | ✅ | ✅ (experimental) |
-| CycloneDX JSON (any version) | ✅ | ✅ | ✅ (experimental) |
+| SPDX 2.3 JSON | ❌ not supported (cross-format) | ✅ | ✅ (experimental) |
+| CycloneDX JSON (any version) | ✅ | ❌ not supported (cross-format) | ❌ not supported (cross-format) |
+
+Requesting a cross-format conversion (e.g. SPDX input with `--to cdx-1.7`, or
+CycloneDX input with `--to spdx-3.0.1`) fails with a `ConversionError` (exit
+code 4) rather than attempting a lossy best-effort mapping.
 
 SPDX 3.1 output is marked experimental — it should be validated against the
 exact SPDX 3.1 model/schema your consumer expects before you rely on it.
@@ -73,7 +79,7 @@ sbom-convert INPUT [--to {spdx-3.0.1,spdx-3.1,cdx-1.7}] [-o OUTPUT]
 | Flag | Description |
 |---|---|
 | `INPUT` | Path to the input SBOM JSON file (required). |
-| `--to {spdx-3.0.1,spdx-3.1,cdx-1.7}` | Target format to convert to. Required unless `--validate`, `--info`, or `--vex` is used instead. |
+| `--to {spdx-3.0.1,spdx-3.1,cdx-1.7}` | Target format to convert to. Must be the same standard as the input (SPDX → SPDX, CycloneDX → CycloneDX) — cross-format targets fail with exit code 4. Required unless `--validate`, `--info`, or `--vex` is used instead. |
 | `-o, --output OUTPUT` | Write the converted SBOM to this file instead of stdout. |
 | `--report REPORT` | Write a JSON report of conversion warnings/stats to this file. Without it, a one-line warning count is printed to stderr if there were any. |
 | `--strict` | Fail the conversion (non-zero exit) instead of emitting warnings for anything that couldn't be cleanly mapped. |
