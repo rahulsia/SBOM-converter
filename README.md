@@ -16,8 +16,10 @@ warnings report describing anything that couldn't be losslessly mapped (e.g.
 an SPDX relationship type with no CycloneDX equivalent).
 
 It can also generate [OpenVEX](https://openvex.dev) vulnerability
-exploitability statements referencing the SBOM's components (see
-[VEX generation](#vex-generation-openvex)), entirely offline.
+exploitability statements referencing the SBOM's components, by default
+looked up from [OSV.dev](https://osv.dev) (see
+[VEX generation](#vex-generation-openvex)), or fully offline if you supply
+the vulnerability data yourself.
 
 ## What it does
 
@@ -63,7 +65,8 @@ This installs the `sbom-convert` command on your `PATH`.
 ```
 sbom-convert INPUT [--to {spdx-3.0.1,spdx-3.1,cdx-1.7}] [-o OUTPUT]
                     [--report REPORT] [--strict] [--validate] [--info]
-                    [--vex VEX] [--vex-output VEX_OUTPUT] [--vex-author AUTHOR]
+                    [--vex] [--vex-input VEX_INPUT] [--vex-output VEX_OUTPUT]
+                    [--vex-author AUTHOR] [--vex-timeout SECONDS]
                     [--version]
 ```
 
@@ -76,9 +79,11 @@ sbom-convert INPUT [--to {spdx-3.0.1,spdx-3.1,cdx-1.7}] [-o OUTPUT]
 | `--strict` | Fail the conversion (non-zero exit) instead of emitting warnings for anything that couldn't be cleanly mapped. |
 | `--validate` | Only detect and structurally validate the input; don't convert. Prints `OK: <format>` on success. |
 | `--info` | Print the detected input format (e.g. `spdx-2.3`, `cyclonedx-1.6`) and exit. |
-| `--vex VEX` | Path to a JSON file of vulnerability statements; generates an [OpenVEX](https://openvex.dev) document referencing this SBOM's components. Can be combined with `--to`. |
+| `--vex` | Generate an [OpenVEX](https://openvex.dev) document for this SBOM's components. By default queries [OSV.dev](https://osv.dev) over the network (each component's purl only — never the full SBOM). Can be combined with `--to`. |
+| `--vex-input VEX_INPUT` | Path to a JSON file of vulnerability statements you supply yourself. When set, `--vex` uses this instead of OSV.dev and stays fully offline. |
 | `--vex-output VEX_OUTPUT` | Write the generated OpenVEX document to this file. Required when `--vex` is used. |
 | `--vex-author AUTHOR` | Author name recorded in the VEX document. Defaults to the tool's author. |
+| `--vex-timeout SECONDS` | Timeout per OSV.dev request (default: 15). Ignored with `--vex-input`. |
 | `--version` | Print the tool version and exit. |
 
 ### Examples
@@ -116,15 +121,20 @@ Reject the conversion instead of proceeding with mapping warnings:
 sbom-convert input.json --to spdx-3.1 --strict
 ```
 
-Generate an OpenVEX document from vulnerability statements you supply,
-referencing components found in the SBOM:
+Generate an OpenVEX document by automatically looking up each component
+against OSV.dev (network required):
 
 ```bash
-sbom-convert input.json --vex vulnerabilities.json --vex-output vex.json
+sbom-convert input.json --vex --vex-output vex.json
 ```
 
-Where `vulnerabilities.json` is a JSON array you write yourself (this tool
-does not scan for or look up vulnerabilities — see [VEX generation](#vex-generation-openvex) below):
+Or generate one fully offline, from vulnerability statements you write
+yourself (see [VEX generation](#vex-generation-openvex) below for the field
+reference):
+
+```bash
+sbom-convert input.json --vex --vex-input vulnerabilities.json --vex-output vex.json
+```
 
 ```json
 [
@@ -156,15 +166,40 @@ does not scan for or look up vulnerabilities — see [VEX generation](#vex-gener
 
 ## VEX generation (OpenVEX)
 
-`--vex` generates a [OpenVEX](https://github.com/openvex/spec) document — the
-minimal, widely-adopted JSON format for stating whether a vulnerability
-affects a given component ("exploitability"). It is fully offline: this tool
-does **not** scan for vulnerabilities, query any CVE database, or send your
-SBOM anywhere. You supply the vulnerability ID and its status; the tool
-matches it against components in the SBOM (by name or purl) and emits a
-spec-conformant statement.
+`--vex` generates an [OpenVEX](https://github.com/openvex/spec) document —
+the minimal, widely-adopted JSON format for stating whether a vulnerability
+affects a given component ("exploitability").
 
-Input is a JSON array, one object per vulnerability:
+There are two modes:
+
+### 1. Automatic lookup via OSV.dev (default)
+
+```bash
+sbom-convert input.json --vex --vex-output vex.json
+```
+
+For each component that has a package URL (purl), this queries
+[OSV.dev](https://osv.dev) — Google's free, open vulnerability database for
+open source packages — over HTTPS. **Only that component's purl is sent per
+request; the full SBOM is never transmitted.** Components without a purl
+are skipped and reported on stderr, since OSV needs an ecosystem/version to
+query reliably.
+
+Everything OSV finds is recorded with `status: "under_investigation"` — the
+tool has no way to judge actual exploitability, only that the version
+matches a known advisory. `status_notes` carries the advisory summary and a
+link back to the source so a human can triage and re-classify each finding
+(`not_affected`, `affected`, or `fixed`) before publishing the document.
+
+### 2. Fully offline, self-supplied data
+
+```bash
+sbom-convert input.json --vex --vex-input vulnerabilities.json --vex-output vex.json
+```
+
+No network access at all. `vulnerabilities.json` is a JSON array you write
+yourself (or generate from another scanner's output), one object per
+vulnerability:
 
 | Field | Required | Notes |
 |---|---|---|
@@ -177,16 +212,16 @@ Input is a JSON array, one object per vulnerability:
 | `products` | no | List of component names to scope the statement to. Omit to apply to every component in the SBOM. |
 | `timestamp` | no | RFC3339 timestamp; defaults to generation time. |
 
+This is also where findings from other scanners (e.g.
+[Grype](https://github.com/anchore/grype)) can be fed in after you've
+reviewed them.
+
+### Both modes
+
 The generated document is validated against the OpenVEX structural
 requirements before being written, and referencing a product name that
 doesn't exist in the SBOM is a validation error rather than a silent
 mismatch.
-
-For actual vulnerability *discovery* (scanning dependencies against CVE
-databases), pair this tool with a scanner such as
-[Grype](https://github.com/anchore/grype) or
-[Syft](https://github.com/anchore/syft), then feed their findings into a
-`vulnerabilities.json` file for `--vex` to turn into an OpenVEX statement.
 
 ## Docker
 

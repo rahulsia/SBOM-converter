@@ -149,13 +149,13 @@ def test_validate_vex_rejects_non_dict():
         validate_vex([])
 
 
-def test_cli_vex_generates_document(tmp_path):
+def test_cli_vex_generates_document_from_vex_input(tmp_path):
     sbom = tmp_path / "sbom.json"
     sbom.write_text(json.dumps(cdx()))
     vulns = tmp_path / "vulns.json"
     vulns.write_text(json.dumps(not_affected()))
     out = tmp_path / "vex.json"
-    assert main([str(sbom), "--vex", str(vulns), "--vex-output", str(out)]) == 0
+    assert main([str(sbom), "--vex", "--vex-input", str(vulns), "--vex-output", str(out)]) == 0
     doc = json.loads(out.read_text())
     assert doc["@context"] == OPENVEX_CONTEXT
     assert len(doc["statements"]) == 1
@@ -167,7 +167,17 @@ def test_cli_vex_requires_vex_output(tmp_path):
     vulns = tmp_path / "vulns.json"
     vulns.write_text(json.dumps(not_affected()))
     with pytest.raises(SystemExit):
-        main([str(sbom), "--vex", str(vulns)])
+        main([str(sbom), "--vex", "--vex-input", str(vulns)])
+
+
+def test_cli_vex_input_requires_vex_flag(tmp_path):
+    sbom = tmp_path / "sbom.json"
+    sbom.write_text(json.dumps(cdx()))
+    vulns = tmp_path / "vulns.json"
+    vulns.write_text(json.dumps(not_affected()))
+    out = tmp_path / "vex.json"
+    with pytest.raises(SystemExit):
+        main([str(sbom), "--vex-input", str(vulns), "--vex-output", str(out)])
 
 
 def test_cli_vex_invalid_input_returns_error_code(tmp_path, capsys):
@@ -176,7 +186,7 @@ def test_cli_vex_invalid_input_returns_error_code(tmp_path, capsys):
     vulns = tmp_path / "vulns.json"
     vulns.write_text(json.dumps([{"id": "CVE-2024-1", "status": "bogus"}]))
     out = tmp_path / "vex.json"
-    assert main([str(sbom), "--vex", str(vulns), "--vex-output", str(out)]) == 3
+    assert main([str(sbom), "--vex", "--vex-input", str(vulns), "--vex-output", str(out)]) == 3
     assert "ERROR" in capsys.readouterr().err
 
 
@@ -195,6 +205,7 @@ def test_cli_vex_combined_with_conversion(tmp_path):
             "-o",
             str(converted_out),
             "--vex",
+            "--vex-input",
             str(vulns),
             "--vex-output",
             str(vex_out),
@@ -210,3 +221,40 @@ def test_cli_requires_an_action(tmp_path):
     sbom.write_text(json.dumps(cdx()))
     with pytest.raises(SystemExit):
         main([str(sbom)])
+
+
+def test_cli_vex_auto_lookup_uses_osv(tmp_path, monkeypatch):
+    sbom = tmp_path / "sbom.json"
+    sbom.write_text(json.dumps(cdx()))
+    out = tmp_path / "vex.json"
+
+    def fake_lookup(entries, timeout=15, on_query=None):
+        assert {e["name"] for e in entries} == {"libfoo", "libbar"}
+        return (
+            [
+                {
+                    "id": "OSV-2024-1",
+                    "status": "under_investigation",
+                    "status_notes": "Detected via OSV.dev against pkg:pypi/libfoo@1.2.3.",
+                    "products": ["libfoo"],
+                }
+            ],
+            ["libbar"],
+        )
+
+    monkeypatch.setattr("sbom_converter.cli.lookup_vulnerabilities", fake_lookup)
+    rc = main([str(sbom), "--vex", "--vex-output", str(out)])
+    assert rc == 0
+    doc = json.loads(out.read_text())
+    assert doc["statements"][0]["vulnerability"]["name"] == "OSV-2024-1"
+
+
+def test_cli_vex_auto_lookup_no_vulns_found(tmp_path, monkeypatch):
+    sbom = tmp_path / "sbom.json"
+    sbom.write_text(json.dumps(cdx()))
+    out = tmp_path / "vex.json"
+
+    monkeypatch.setattr("sbom_converter.cli.lookup_vulnerabilities", lambda entries, timeout=15, on_query=None: ([], []))
+    rc = main([str(sbom), "--vex", "--vex-output", str(out)])
+    assert rc == 0
+    assert not out.exists()
