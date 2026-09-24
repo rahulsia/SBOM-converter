@@ -15,6 +15,14 @@ authors = [{name="Rahul Kumar", email="rahulk.3477@gmail.com"}]
 keywords = ["SBOM", "SPDX", "CycloneDX"]
 dependencies = []
 
+[project.optional-dependencies]
+dev = [
+    "pytest==9.1.1",
+    "ruff==0.16.8",
+    "bandit==1.9.4",
+    "pip-audit==2.10.1",
+]
+
 [project.scripts]
 sbom-convert = "sbom_converter.cli:main"
 
