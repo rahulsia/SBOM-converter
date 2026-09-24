@@ -94,24 +94,155 @@ def detect(doc):
 
 def basic_validate(doc, fmt):
     if fmt.startswith("cyclonedx-"):
-        if doc.get("bomFormat") != "CycloneDX" or not doc.get("specVersion"):
-            raise ValidationError("Invalid CycloneDX document header.")
-        if "components" in doc and not isinstance(doc["components"], list):
-            raise ValidationError("CycloneDX 'components' must be a list.")
-        if "dependencies" in doc and not isinstance(doc["dependencies"], list):
-            raise ValidationError("CycloneDX 'dependencies' must be a list.")
+        validate_cyclonedx(doc, fmt)
     elif fmt == "spdx-2.3":
-        for k in ("spdxVersion", "SPDXID", "name", "dataLicense", "documentNamespace", "creationInfo"):
-            if k not in doc:
-                raise ValidationError(f"SPDX 2.3 missing required field: {k}")
-        if "packages" in doc and not isinstance(doc["packages"], list):
-            raise ValidationError("SPDX 2.3 'packages' must be a list.")
-        if "relationships" in doc and not isinstance(doc["relationships"], list):
-            raise ValidationError("SPDX 2.3 'relationships' must be a list.")
+        validate_spdx2(doc)
     elif fmt.startswith("spdx-3"):
-        if "@context" not in doc or not isinstance(doc.get("@graph"), list):
-            raise ValidationError("SPDX 3 JSON-LD requires @context and @graph.")
+        validate_spdx3(doc, fmt)
     return True
+
+
+def validate_cyclonedx(doc, fmt):
+    if doc.get("bomFormat") != "CycloneDX":
+        raise ValidationError(f"CycloneDX 'bomFormat' must be 'CycloneDX', got {doc.get('bomFormat')}")
+    if not doc.get("specVersion"):
+        raise ValidationError("CycloneDX 'specVersion' is required")
+    if "components" in doc and not isinstance(doc["components"], list):
+        raise ValidationError("CycloneDX 'components' must be a list")
+    if "dependencies" in doc and not isinstance(doc["dependencies"], list):
+        raise ValidationError("CycloneDX 'dependencies' must be a list")
+    if "version" in doc and not isinstance(doc["version"], int):
+        raise ValidationError("CycloneDX 'version' must be an integer")
+    for i, c in enumerate(doc.get("components", [])):
+        if not isinstance(c, dict):
+            raise ValidationError(f"Component {i} must be an object, got {type(c).__name__}")
+        if not c.get("type"):
+            raise ValidationError(f"Component {i} missing required 'type' field")
+        if not c.get("name"):
+            raise ValidationError(f"Component {i} missing required 'name' field")
+    for i, dep in enumerate(doc.get("dependencies", [])):
+        if not isinstance(dep, dict):
+            raise ValidationError(f"Dependency {i} must be an object")
+        if "ref" not in dep:
+            raise ValidationError(f"Dependency {i} missing required 'ref' field")
+
+
+def validate_spdx2(doc):
+    required_fields = ("spdxVersion", "SPDXID", "name", "dataLicense", "documentNamespace", "creationInfo")
+    for k in required_fields:
+        if k not in doc:
+            raise ValidationError(f"SPDX 2.x missing required field: {k}")
+    if not str(doc.get("spdxVersion", "")).startswith("SPDX-2"):
+        raise ValidationError(f"Invalid spdxVersion format, expected SPDX-2.x, got {doc.get('spdxVersion')}")
+    if not isinstance(doc.get("creationInfo"), dict):
+        raise ValidationError("SPDX creationInfo must be an object")
+    if "packages" in doc and not isinstance(doc["packages"], list):
+        raise ValidationError("SPDX 'packages' must be a list")
+    if "relationships" in doc and not isinstance(doc["relationships"], list):
+        raise ValidationError("SPDX 'relationships' must be a list")
+    if "files" in doc and not isinstance(doc["files"], list):
+        raise ValidationError("SPDX 'files' must be a list")
+    for i, pkg in enumerate(doc.get("packages", [])):
+        if not isinstance(pkg, dict):
+            raise ValidationError(f"Package {i} must be an object")
+        if not pkg.get("name"):
+            raise ValidationError(f"Package {i} missing required 'name' field")
+        if not pkg.get("SPDXID"):
+            raise ValidationError(f"Package {i} missing required 'SPDXID' field")
+    for i, rel in enumerate(doc.get("relationships", [])):
+        if not isinstance(rel, dict):
+            raise ValidationError(f"Relationship {i} must be an object")
+        if not rel.get("spdxElementId"):
+            raise ValidationError(f"Relationship {i} missing required 'spdxElementId' field")
+        if not rel.get("relationshipType"):
+            raise ValidationError(f"Relationship {i} missing required 'relationshipType' field")
+
+
+def validate_spdx3(doc, fmt):
+    if "@context" not in doc:
+        raise ValidationError("SPDX 3 JSON-LD missing required '@context' field")
+    if "@graph" not in doc or not isinstance(doc["@graph"], list):
+        raise ValidationError("SPDX 3 JSON-LD missing '@graph' or '@graph' is not a list")
+    if not doc["@graph"]:
+        raise ValidationError("SPDX 3 JSON-LD '@graph' must not be empty")
+    for i, item in enumerate(doc["@graph"]):
+        if not isinstance(item, dict):
+            raise ValidationError(f"@graph[{i}] must be an object")
+        if not item.get("type"):
+            raise ValidationError(f"@graph[{i}] missing required 'type' field")
+        if not (item.get("spdxId") or item.get("@id")):
+            raise ValidationError(f"@graph[{i}] missing required 'spdxId' or '@id' field")
+
+
+def validate_output(doc, target_fmt):
+    if not isinstance(doc, dict):
+        raise ValidationError(f"Output must be a JSON object, got {type(doc).__name__}")
+    if target_fmt.startswith("cdx-"):
+        validate_cyclonedx_output(doc, target_fmt)
+    elif target_fmt.startswith("spdx-2"):
+        validate_spdx2_output(doc)
+    elif target_fmt.startswith("spdx-3"):
+        validate_spdx3_output(doc, target_fmt)
+    else:
+        raise ValidationError(f"Unknown target format: {target_fmt}")
+    return True
+
+
+def validate_cyclonedx_output(doc, target_fmt):
+    if doc.get("bomFormat") != "CycloneDX":
+        raise ValidationError(f"Output bomFormat must be 'CycloneDX', got {doc.get('bomFormat')}")
+    spec = target_fmt.split("-", 1)[1]
+    if doc.get("specVersion") != spec:
+        raise ValidationError(f"Output specVersion must be '{spec}', got {doc.get('specVersion')}")
+    if "serialNumber" not in doc:
+        raise ValidationError(f"CycloneDX {spec} output missing serialNumber")
+    if "version" not in doc or not isinstance(doc["version"], int):
+        raise ValidationError(f"CycloneDX {spec} output missing or invalid version field")
+    if "components" in doc and not isinstance(doc["components"], list):
+        raise ValidationError("Output 'components' must be a list")
+    for i, c in enumerate(doc.get("components", [])):
+        if not isinstance(c, dict):
+            raise ValidationError(f"Component {i} must be an object, got {type(c).__name__}")
+        if not c.get("type"):
+            raise ValidationError(f"Component {i} missing required 'type' field")
+        if not c.get("name"):
+            raise ValidationError(f"Component {i} missing required 'name' field")
+
+
+def validate_spdx2_output(doc):
+    required = ("spdxVersion", "SPDXID", "name", "dataLicense", "documentNamespace", "creationInfo")
+    for k in required:
+        if k not in doc:
+            raise ValidationError(f"SPDX 2.x output missing required field: {k}")
+    if not str(doc.get("spdxVersion", "")).startswith("SPDX-2"):
+        raise ValidationError(f"Invalid spdxVersion format, got {doc.get('spdxVersion')}")
+    if not isinstance(doc.get("creationInfo"), dict):
+        raise ValidationError("SPDX output creationInfo must be an object")
+    if "packages" in doc and not isinstance(doc["packages"], list):
+        raise ValidationError("Output 'packages' must be a list")
+    for i, pkg in enumerate(doc.get("packages", [])):
+        if not isinstance(pkg, dict):
+            raise ValidationError(f"Package {i} must be an object")
+        if not pkg.get("name"):
+            raise ValidationError(f"Package {i} missing required 'name' field")
+        if not pkg.get("SPDXID"):
+            raise ValidationError(f"Package {i} missing required 'SPDXID' field")
+
+
+def validate_spdx3_output(doc, target_fmt):
+    if "@context" not in doc:
+        raise ValidationError("SPDX 3 output missing @context")
+    if "@graph" not in doc or not isinstance(doc["@graph"], list):
+        raise ValidationError("SPDX 3 output missing or invalid @graph (must be a list)")
+    if not doc["@graph"]:
+        raise ValidationError("SPDX 3 output @graph must not be empty")
+    for i, item in enumerate(doc["@graph"]):
+        if not isinstance(item, dict):
+            raise ValidationError(f"@graph[{i}] must be an object, got {type(item).__name__}")
+        if not item.get("type"):
+            raise ValidationError(f"@graph[{i}] missing required 'type' field")
+        if not (item.get("spdxId") or item.get("@id")):
+            raise ValidationError(f"@graph[{i}] missing required 'spdxId' or '@id' field")
 
 
 def spdx2_to_cdx(doc, report):
@@ -292,8 +423,8 @@ def cdx_to_spdx3(doc, report, target="3.0.1"):
         if c.get("purl"):
             p["externalRefs"] = [{"referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": c["purl"]}]
         if c.get("licenses"):
-            l = c["licenses"][0]
-            p["licenseConcluded"] = l.get("expression") or l.get("license", {}).get("id") or "NOASSERTION"
+            lic_info = c["licenses"][0]
+            p["licenseConcluded"] = lic_info.get("expression") or lic_info.get("license", {}).get("id") or "NOASSERTION"
         tmp["packages"].append(p)
     for d in doc.get("dependencies", []):
         for b in d.get("dependsOn", []):
@@ -322,6 +453,7 @@ def convert(doc, target, strict=False):
             raise ConversionError(f"{src} -> {target} is not implemented.")
     else:
         raise ConversionError(f"Unsupported target: {target}")
+    validate_output(out, target)
     if strict and report.warnings:
         raise ConversionError("Strict mode rejected a conversion with warnings: " + report.warnings[0].message)
     return out, report
