@@ -102,7 +102,10 @@ def test_convert_unsupported_target():
 
 
 def test_convert_unimplemented_path():
-    doc = {"@context": "https://spdx.org/rdf/3.0.1/spdx-context.jsonld", "@graph": []}
+    doc = {
+        "@context": "https://spdx.org/rdf/3.0.1/spdx-context.jsonld",
+        "@graph": [{"type": "SpdxDocument", "spdxId": "SPDXRef-DOCUMENT"}],
+    }
     with pytest.raises(ConversionError):
         convert(doc, "cdx-1.7")
 
