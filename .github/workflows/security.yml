@@ -33,7 +33,7 @@ jobs:
           python-version: '3.12'
       - name: Install Ruff and Reviewdog
         run: |
-          python -m pip install --disable-pip-version-check ruff
+          python -m pip install --disable-pip-version-check -e ".[dev]"
           curl -sfL https://raw.githubusercontent.com/reviewdog/reviewdog/master/install.sh | sh -s -- -b "$HOME/bin"
           echo "$HOME/bin" >> "$GITHUB_PATH"
       - name: Ruff review comments
@@ -58,8 +58,7 @@ jobs:
       - name: Install scanners and project
         run: |
           python -m pip install --upgrade pip
-          python -m pip install bandit pip-audit pytest
-          python -m pip install -e .
+          python -m pip install -e ".[dev]"
       - name: Unit tests
         run: pytest -q
       - name: Bandit SAST

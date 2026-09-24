@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: 2026 Rahul Kumar <rahulk.3477@gmail.com>
+# SPDX-License-Identifier: MIT
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+build/
+dist/
+.venv/
+venv/
