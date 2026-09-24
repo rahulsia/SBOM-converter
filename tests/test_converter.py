@@ -10,6 +10,7 @@ from sbom_converter.core import (
     basic_validate,
     convert,
     detect,
+    validate_output,
 )
 
 
@@ -171,3 +172,74 @@ def test_cli_unsupported_input_returns_error_code(tmp_path, capsys):
     bad.write_text(json.dumps({"foo": "bar"}))
     assert main([str(bad)]) == 2
     assert "ERROR" in capsys.readouterr().err
+
+
+def test_validate_output_cdx17_valid():
+    out, _ = convert(spdx(), "cdx-1.7")
+    assert validate_output(out, "cdx-1.7") is True
+
+
+def test_validate_output_cdx17_missing_serialnumber():
+    out, _ = convert(spdx(), "cdx-1.7")
+    del out["serialNumber"]
+    with pytest.raises(ValidationError, match="serialNumber"):
+        validate_output(out, "cdx-1.7")
+
+
+def test_validate_output_cdx17_invalid_specversion():
+    out, _ = convert(spdx(), "cdx-1.7")
+    out["specVersion"] = "1.6"
+    with pytest.raises(ValidationError, match="1.7"):
+        validate_output(out, "cdx-1.7")
+
+
+def test_validate_output_cdx17_components_not_list():
+    out, _ = convert(spdx(), "cdx-1.7")
+    out["components"] = "not-a-list"
+    with pytest.raises(ValidationError, match="components.*list"):
+        validate_output(out, "cdx-1.7")
+
+
+def test_validate_output_cdx17_component_missing_name():
+    out, _ = convert(spdx(), "cdx-1.7")
+    del out["components"][0]["name"]
+    with pytest.raises(ValidationError, match="name"):
+        validate_output(out, "cdx-1.7")
+
+
+def test_validate_output_spdx301_valid():
+    out, _ = convert(cdx(), "spdx-3.0.1")
+    assert validate_output(out, "spdx-3.0.1") is True
+
+
+def test_validate_output_spdx301_missing_context():
+    out, _ = convert(cdx(), "spdx-3.0.1")
+    del out["@context"]
+    with pytest.raises(ValidationError, match="@context"):
+        validate_output(out, "spdx-3.0.1")
+
+
+def test_validate_output_spdx301_graph_not_list():
+    out, _ = convert(cdx(), "spdx-3.0.1")
+    out["@graph"] = "not-a-list"
+    with pytest.raises(ValidationError, match="@graph"):
+        validate_output(out, "spdx-3.0.1")
+
+
+def test_validate_output_spdx301_empty_graph():
+    out, _ = convert(cdx(), "spdx-3.0.1")
+    out["@graph"] = []
+    with pytest.raises(ValidationError, match="not be empty"):
+        validate_output(out, "spdx-3.0.1")
+
+
+def test_validate_output_spdx301_graph_item_missing_type():
+    out, _ = convert(cdx(), "spdx-3.0.1")
+    del out["@graph"][0]["type"]
+    with pytest.raises(ValidationError, match="type"):
+        validate_output(out, "spdx-3.0.1")
+
+
+def test_validate_output_not_dict():
+    with pytest.raises(ValidationError, match="JSON object"):
+        validate_output([], "cdx-1.7")

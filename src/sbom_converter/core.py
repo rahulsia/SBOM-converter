@@ -114,6 +114,40 @@ def basic_validate(doc, fmt):
     return True
 
 
+def validate_output(doc, target_fmt):
+    if not isinstance(doc, dict):
+        raise ValidationError(f"Output must be a JSON object, got {type(doc).__name__}")
+    if target_fmt == "cdx-1.7":
+        if doc.get("bomFormat") != "CycloneDX":
+            raise ValidationError(f"Output bomFormat must be 'CycloneDX', got {doc.get('bomFormat')}")
+        if doc.get("specVersion") != "1.7":
+            raise ValidationError(f"Output specVersion must be '1.7', got {doc.get('specVersion')}")
+        if "serialNumber" not in doc:
+            raise ValidationError("CycloneDX 1.7 output missing serialNumber")
+        if "version" not in doc or not isinstance(doc["version"], int):
+            raise ValidationError("CycloneDX 1.7 output missing or invalid version field")
+        if "components" in doc and not isinstance(doc["components"], list):
+            raise ValidationError("Output 'components' must be a list")
+        for i, c in enumerate(doc.get("components", [])):
+            if not isinstance(c, dict):
+                raise ValidationError(f"Component {i} must be an object, got {type(c).__name__}")
+            if "name" not in c:
+                raise ValidationError(f"Component {i} missing required 'name' field")
+    elif target_fmt in ("spdx-3.0.1", "spdx-3.1"):
+        if "@context" not in doc:
+            raise ValidationError("SPDX 3 output missing @context")
+        if "@graph" not in doc or not isinstance(doc["@graph"], list):
+            raise ValidationError("SPDX 3 output missing or invalid @graph (must be a list)")
+        if not doc["@graph"]:
+            raise ValidationError("SPDX 3 output @graph must not be empty")
+        for i, item in enumerate(doc["@graph"]):
+            if not isinstance(item, dict):
+                raise ValidationError(f"@graph[{i}] must be an object, got {type(item).__name__}")
+            if "type" not in item:
+                raise ValidationError(f"@graph[{i}] missing required 'type' field")
+    return True
+
+
 def spdx2_to_cdx(doc, report):
     out = {
         "bomFormat": "CycloneDX",
@@ -292,8 +326,8 @@ def cdx_to_spdx3(doc, report, target="3.0.1"):
         if c.get("purl"):
             p["externalRefs"] = [{"referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": c["purl"]}]
         if c.get("licenses"):
-            l = c["licenses"][0]
-            p["licenseConcluded"] = l.get("expression") or l.get("license", {}).get("id") or "NOASSERTION"
+            lic_info = c["licenses"][0]
+            p["licenseConcluded"] = lic_info.get("expression") or lic_info.get("license", {}).get("id") or "NOASSERTION"
         tmp["packages"].append(p)
     for d in doc.get("dependencies", []):
         for b in d.get("dependsOn", []):
@@ -322,6 +356,7 @@ def convert(doc, target, strict=False):
             raise ConversionError(f"{src} -> {target} is not implemented.")
     else:
         raise ConversionError(f"Unsupported target: {target}")
+    validate_output(out, target)
     if strict and report.warnings:
         raise ConversionError("Strict mode rejected a conversion with warnings: " + report.warnings[0].message)
     return out, report
