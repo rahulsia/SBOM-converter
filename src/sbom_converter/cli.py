@@ -11,6 +11,7 @@ from . import __version__
 from .core import ConversionError, SbomError, UnsupportedInput, ValidationError, basic_validate, convert, detect
 from .native_vex import analyze_cyclonedx_vex, augment_spdx3_with_cdx_vex
 from .osv import lookup_vulnerabilities
+from .osv_scan import scan_osv
 from .vex import build_vex, extract_products, validate_vex, validate_vex_input
 
 
@@ -34,6 +35,9 @@ def main(argv=None):
     p.add_argument("--info", action="store_true", help="Print detected input format.")
     p.add_argument("--analyze-vex", action="store_true", help="Analyze embedded CycloneDX vulnerability/VEX assertions without changing their producer-supplied status.")
     p.add_argument("--vex-report", help="Write embedded CycloneDX VEX analysis summary as JSON.")
+    p.add_argument("--osv-scan", action="store_true", help="Query OSV.dev for known vulnerabilities using versioned component package URLs (purls).")
+    p.add_argument("--osv-report", help="Write OSV vulnerability and VEX-correlation results as JSON.")
+    p.add_argument("--osv-timeout", type=int, default=15, help="OSV.dev timeout per request in seconds (default: 15).")
     p.add_argument("--vex", action="store_true", help="Generate an OpenVEX document. By default queries OSV.dev using component purls; use --vex-input for offline supplied assertions.")
     p.add_argument("--vex-input", help="Path to a JSON file of vulnerability statements supplied by the user.")
     p.add_argument("--vex-output", help="Write generated OpenVEX to this file (required with --vex).")
@@ -49,15 +53,17 @@ def main(argv=None):
         p.error("--vex-input requires --vex")
     if a.vex_report and not a.analyze_vex:
         p.error("--vex-report requires --analyze-vex")
+    if a.osv_report and not a.osv_scan:
+        p.error("--osv-report requires --osv-scan")
     try:
         doc = load(a.input)
         fmt = detect(doc)
         if a.info:
             print(fmt); return 0
-        if a.validate and not a.to and not a.vex and not a.analyze_vex:
+        if a.validate and not a.to and not a.vex and not a.analyze_vex and not a.osv_scan:
             basic_validate(doc, fmt); print(f"OK: {fmt}"); return 0
-        if not a.to and not a.vex and not a.analyze_vex:
-            p.error("--to is required for conversion (or use --validate, --info, --vex, --analyze-vex)")
+        if not a.to and not a.vex and not a.analyze_vex and not a.osv_scan:
+            p.error("--to is required for conversion (or use --validate, --info, --vex, --analyze-vex, --osv-scan)")
         basic_validate(doc, fmt)
 
         if a.analyze_vex:
@@ -67,6 +73,14 @@ def main(argv=None):
             text = json.dumps(summary, indent=2, ensure_ascii=False) + "\n"
             if a.vex_report:
                 Path(a.vex_report).write_text(text, encoding="utf-8")
+            else:
+                sys.stdout.write(text)
+
+        if a.osv_scan:
+            osv_result = scan_osv(doc, timeout=a.osv_timeout)
+            text = json.dumps(osv_result, indent=2, ensure_ascii=False) + "\n"
+            if a.osv_report:
+                Path(a.osv_report).write_text(text, encoding="utf-8")
             else:
                 sys.stdout.write(text)
 
@@ -92,7 +106,6 @@ def main(argv=None):
 
         if a.to:
             out, rep = convert(doc, a.to, a.strict)
-            # Preserve embedded CycloneDX VEX semantically when targeting SPDX 3.
             if fmt.startswith("cyclonedx-") and a.to in ("spdx-3.0.1", "spdx-3.1") and doc.get("vulnerabilities"):
                 augment_spdx3_with_cdx_vex(doc, out, rep)
             text = json.dumps(out, indent=2, ensure_ascii=False) + "\n"
