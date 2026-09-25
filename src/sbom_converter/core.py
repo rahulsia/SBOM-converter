@@ -285,17 +285,57 @@ def spdx2_to_cdx(doc, report):
                 break
         out["components"].append(c)
     deps = {}
+    handled = 0
+    other_preserved = 0
     for r in doc.get("relationships", []):
         a, b, t = r.get("spdxElementId"), r.get("relatedSpdxElement"), r.get("relationshipType", "")
         if a in ids and b in ids and t in ("DEPENDS_ON", "DYNAMIC_LINK", "STATIC_LINK"):
             deps.setdefault(a, set()).add(b)
+            handled += 1
+        elif a in ids and b in ids and t == "DEPENDENCY_OF":
+            # SPDX 2.x expresses the inverse direction of CycloneDX dependsOn.
+            deps.setdefault(b, set()).add(a)
+            handled += 1
+        elif t == "OTHER":
+            # Syft uses OTHER/evident-by to record package-to-file evidence.
+            # CycloneDX has no equivalent dependency relationship, so preserve
+            # the assertion as a component property instead of dropping it or
+            # falsely converting it into a dependency edge.
+            comp = next((x for x in out["components"] if x.get("bom-ref") == a), None)
+            if comp is not None:
+                value = b or "NOASSERTION"
+                if r.get("comment"):
+                    value += " | " + str(r["comment"])
+                comp.setdefault("properties", []).append({
+                    "name": "sbom-convert:spdx:relationship:OTHER",
+                    "value": value,
+                })
+                other_preserved += 1
+            else:
+                report.warn(
+                    "OTHER_RELATIONSHIP_UNMAPPED",
+                    "SPDX OTHER relationship could not be attached to a mapped component.",
+                    a or "",
+                )
         elif t not in ("DESCRIBES", "CONTAINS"):
-            report.warn("RELATIONSHIP_NOT_MAPPED", f"SPDX relationship {t} not represented in CycloneDX dependency graph.")
+            report.warn(
+                "RELATIONSHIP_NOT_MAPPED",
+                f"SPDX relationship {t} not represented in CycloneDX dependency graph.",
+            )
     if deps:
         out["dependencies"] = [{"ref": k, "dependsOn": sorted(v)} for k, v in sorted(deps.items())]
     if doc.get("files"):
-        report.warn("FILES_NOT_MAPPED", "SPDX file-level objects are not emitted as CycloneDX components.")
-    report.stats = {"components": len(out["components"]), "relationships": len(doc.get("relationships", []))}
+        report.warn(
+            "FILES_NOT_MAPPED",
+            "SPDX file-level objects are not emitted as CycloneDX components; "
+            "their Syft evidence relationships are preserved as component properties where possible.",
+        )
+    report.stats = {
+        "components": len(out["components"]),
+        "sourceRelationships": len(doc.get("relationships", [])),
+        "dependencyRelationshipsMapped": handled,
+        "otherRelationshipsPreserved": other_preserved,
+    }
     return out
 
 
