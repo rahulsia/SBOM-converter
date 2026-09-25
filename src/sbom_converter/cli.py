@@ -132,7 +132,7 @@ def main(argv=None):
 
         source = a.vuln_source
         if a.osv_scan:
-            source = "both" if source == "nvd" else "osv"
+            source = "both" if source in ("nvd", "both") else "osv"
         if source == "both":
             osv_enabled = True
             nvd_enabled = True
