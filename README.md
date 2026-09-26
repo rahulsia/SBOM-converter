@@ -153,6 +153,11 @@ The NVD/OSV provider tests mock network responses so CI does not depend on exter
 MIT. See `LICENSE`.
 
 
+## Documentation
+
+- [API Reference](docs/API.md) — REST endpoints, parameters, examples, OSV/NVD options and VEX behavior.
+- [CI/Security Workflow](docs/WORKFLOW.md) — current GitHub Actions jobs, permissions, runners and security controls.
+
 ## CLI, Python API and REST API
 
 The CLI is the primary interface. The reusable service layer is also available as a Python API, and an optional FastAPI adapter exposes the same operations over HTTP.
