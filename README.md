@@ -148,36 +148,15 @@ The repository CI also runs Ruff/Reviewdog, Bandit, pip-audit, Semgrep, Gitleaks
 
 The NVD/OSV provider tests mock network responses so CI does not depend on external service availability.
 
-## Docker
-
-```bash
-docker build -t sbom-converter .
-
-docker run --rm \
-  -v "$PWD:/data" \
-  sbom-converter \
-  /data/input.json \
-  --to cdx-1.7 \
-  -o /data/output.json
-```
-
-Vulnerability scanning is still opt-in in Docker:
-
-```bash
-docker run --rm \
-  -v "$PWD:/data" \
-  sbom-converter \
-  /data/input.json \
-  --vuln-source both \
-  --osv-report /data/osv.json \
-  --nvd-report /data/nvd.json \
-  --security-report /data/security.json
-```
-
 ## License
 
 MIT. See `LICENSE`.
 
+
+## Documentation
+
+- [API Reference](docs/API.md) — REST endpoints, parameters, examples, OSV/NVD options and VEX behavior.
+- [CI/Security Workflow](docs/WORKFLOW.md) — current GitHub Actions jobs, permissions, runners and security controls.
 
 ## CLI, Python API and REST API
 
@@ -238,4 +217,4 @@ curl -X POST http://localhost:8000/scan \
 
 NVD credentials should normally be supplied through deployment configuration rather than committed files. The API accepts an optional `nvdApiKey` field for controlled service-to-service use.
 
-Docker remains an optional packaging/deployment method; it is not required for the CLI or Python API.
+Docker remains optional packaging/deployment; it is not required for the CLI or Python API.
