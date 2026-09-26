@@ -10,3 +10,8 @@ build/
 dist/
 .venv/
 venv/
+
+input/*
+!input/.gitkeep
+output/*
+!output/.gitkeep
