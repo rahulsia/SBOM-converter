@@ -4,7 +4,7 @@ Copyright (c) 2026 Rahul Kumar
 Author: Rahul Kumar — rahulk.3477@gmail.com
 License: MIT (`SPDX-License-Identifier: MIT`)
 
-A CLI and Docker image for SBOM conversion plus optional vulnerability and VEX analysis.
+A CLI-first SBOM converter with a reusable Python API and optional REST API. Docker is supported only as a packaging/deployment option.
 
 ## Supported formats
 
@@ -147,32 +147,6 @@ pytest -q
 The repository CI also runs Ruff/Reviewdog, Bandit, pip-audit, Semgrep, Gitleaks, Trivy, Hadolint and pytest.
 
 The NVD/OSV provider tests mock network responses so CI does not depend on external service availability.
-
-## Docker
-
-```bash
-docker build -t sbom-converter .
-
-docker run --rm \
-  -v "$PWD:/data" \
-  sbom-converter \
-  /data/input.json \
-  --to cdx-1.7 \
-  -o /data/output.json
-```
-
-Vulnerability scanning is still opt-in in Docker:
-
-```bash
-docker run --rm \
-  -v "$PWD:/data" \
-  sbom-converter \
-  /data/input.json \
-  --vuln-source both \
-  --osv-report /data/osv.json \
-  --nvd-report /data/nvd.json \
-  --security-report /data/security.json
-```
 
 ## License
 
