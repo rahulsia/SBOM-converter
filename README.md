@@ -177,3 +177,65 @@ docker run --rm \
 ## License
 
 MIT. See `LICENSE`.
+
+
+## CLI, Python API and REST API
+
+The CLI is the primary interface. The reusable service layer is also available as a Python API, and an optional FastAPI adapter exposes the same operations over HTTP.
+
+### Python API
+
+```python
+from sbom_converter import convert_sbom, scan_vulnerabilities, analyze_vex
+
+converted = convert_sbom(sbom, "cdx-1.7")
+security = scan_vulnerabilities(sbom, sources=["osv", "nvd"])
+vex_report = analyze_vex(sbom)
+```
+
+The Python API does not start a server and uses the same core as the CLI.
+
+### REST API
+
+Install the optional API dependencies:
+
+```bash
+pip install "sbom-converter-rahul[api]"
+```
+
+Start the service:
+
+```bash
+sbom-api
+```
+
+The API listens on `http://0.0.0.0:8000`.
+
+Available endpoints:
+
+```text
+GET  /health
+POST /convert
+POST /scan
+POST /vex/analyze
+```
+
+Example conversion request:
+
+```bash
+curl -X POST http://localhost:8000/convert \
+  -H 'Content-Type: application/json' \
+  -d '{"sbom": <SBOM_JSON>, "target": "cdx-1.7"}'
+```
+
+Example vulnerability scan:
+
+```bash
+curl -X POST http://localhost:8000/scan \
+  -H 'Content-Type: application/json' \
+  -d '{"sbom": <SBOM_JSON>, "sources": ["osv", "nvd"]}'
+```
+
+NVD credentials should normally be supplied through deployment configuration rather than committed files. The API accepts an optional `nvdApiKey` field for controlled service-to-service use.
+
+Docker remains an optional packaging/deployment method; it is not required for the CLI or Python API.
