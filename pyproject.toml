@@ -7,15 +7,19 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "sbom-converter-rahul"
 version = "0.1.0"
-description = "CLI/Docker SBOM converter for SPDX 2.3, SPDX 3.x, and CycloneDX 1.7"
+description = "SBOM converter with CLI, Python API, OSV/NVD scanning, and optional FastAPI service"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 authors = [{name="Rahul Kumar", email="rahulk.3477@gmail.com"}]
-keywords = ["SBOM", "SPDX", "CycloneDX"]
+keywords = ["SBOM", "SPDX", "CycloneDX", "VEX", "OSV", "NVD"]
 dependencies = []
 
 [project.optional-dependencies]
+api = [
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]>=0.30,<1",
+]
 dev = [
     "pytest==9.1.1",
     "ruff==0.16.8",
@@ -25,6 +29,7 @@ dev = [
 
 [project.scripts]
 sbom-convert = "sbom_converter.cli:main"
+sbom-api = "sbom_converter.api:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]
